@@ -1,0 +1,16 @@
+id: nmap-ports
+name: Open port check (Nmap)
+version: "1.0"
+description: Nmap top TCP ports, parsed as observations and independently rechecked.
+source: https://nmap.org
+kind: active
+approval: admin
+interpreter: ""
+executable: nmap
+sha256: ""
+target_type: host
+args: ["-Pn", "-sT", "--top-ports", "100", "--open", "-oX", "-", "{target}"]
+timeout_s: 120
+max_output_kb: 512
+parser: nmap_xml
+validator: tcp_open

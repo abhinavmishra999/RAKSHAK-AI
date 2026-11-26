@@ -1,0 +1,9 @@
+# Copy to your RAKSHAK_DATA folder as scope.yml. Empty means DENY ALL active tests.
+# Add ONLY assets your organisation owns and has authorised for testing.
+# Private IP space is not automatically your property. No automatic localhost exception.
+networks: []
+hosts: []
+never_scan: []
+# Example authorised staging machine (uncomment only if it is yours):
+# networks: [127.0.0.1/32, '::1/128']
+# Add gateways/critical systems in never_scan and RAKSHAK_NEVER_BLOCK.

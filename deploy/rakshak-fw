@@ -1,0 +1,67 @@
+#!/usr/bin/python3 -I
+"""rakshak-fw: the ONLY command the Rakshak service account may run as root (via sudo).
+
+It accepts exactly the iptables calls Rakshak's IptablesEnforcer makes, and nothing else:
+
+    rakshak-fw 4|6 -S RAKSHAK-BLOCK
+    rakshak-fw 4|6 -C INPUT -j RAKSHAK-BLOCK
+    rakshak-fw 4|6 -C|-A|-D RAKSHAK-BLOCK -s <single address>/<32|128> -j DROP
+
+Loopback, unspecified, multicast, link-local and reserved addresses are refused, and the
+address family must match 4 or 6. It never creates chains or touches INPUT.
+
+Install (as root):
+    install -o root -g root -m 0755 deploy/rakshak-fw /usr/local/sbin/rakshak-fw
+    echo 'rakshak ALL=(root) NOPASSWD: /usr/local/sbin/rakshak-fw' > /etc/sudoers.d/rakshak
+    chmod 0440 /etc/sudoers.d/rakshak && visudo -c
+Then start Rakshak with:
+    RAKSHAK_ENFORCER=iptables
+    RAKSHAK_IPTABLES_CMD="sudo -n /usr/local/sbin/rakshak-fw 4"
+    RAKSHAK_IP6TABLES_CMD="sudo -n /usr/local/sbin/rakshak-fw 6"
+"""
+import ipaddress
+import os
+import sys
+
+CHAIN = "RAKSHAK-BLOCK"
+BINARIES = {"4": ("/usr/sbin/iptables", "/sbin/iptables"), "6": ("/usr/sbin/ip6tables", "/sbin/ip6tables")}
+
+
+def refuse(why):
+    print(f"rakshak-fw: refused: {why}", file=sys.stderr)
+    sys.exit(2)
+
+
+def check_address(text, family):
+    try:
+        net = ipaddress.ip_network(text, strict=True)
+    except ValueError:
+        refuse("not a valid address")
+    if str(net.version) != family:
+        refuse("address family does not match")
+    if net.prefixlen != net.max_prefixlen:
+        refuse("only single addresses (/32 or /128) may be blocked")
+    ip = net.network_address
+    if ip.is_unspecified or ip.is_loopback or ip.is_multicast or ip.is_link_local or ip.is_reserved:
+        refuse("protected address")
+
+
+def main(argv):
+    if len(argv) < 2 or argv[0] not in BINARIES:
+        refuse("usage: rakshak-fw 4|6 <allowed iptables arguments>")
+    family, args = argv[0], argv[1:]
+    if args in (["-S", CHAIN], ["-C", "INPUT", "-j", CHAIN]):
+        pass
+    elif (len(args) == 6 and args[0] in ("-C", "-A", "-D") and args[1] == CHAIN
+          and args[2] == "-s" and args[4:] == ["-j", "DROP"]):
+        check_address(args[3], family)
+    else:
+        refuse("command not allowed")
+    binary = next((b for b in BINARIES[family] if os.path.isfile(b)), None)
+    if not binary:
+        refuse("iptables binary not found")
+    os.execv(binary, [binary, "-w", *args])   # -w: wait for the xtables lock instead of failing
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -1,0 +1,22 @@
+rakshak-fw live check - 2026-11-26 08:50 UTC - iptables v1.8.10 (legacy)
+--- refused commands (expected exit=2)
+exit=2 : rakshak-fw 4 -F
+exit=2 : rakshak-fw 4 -X RAKSHAK-BLOCK
+exit=2 : rakshak-fw 4 -I INPUT 1 -j ACCEPT
+exit=2 : rakshak-fw 4 -A INPUT -s 10.99.0.6/32 -j DROP
+exit=2 : rakshak-fw 4 -A RAKSHAK-BLOCK -s 0.0.0.0/0 -j DROP
+exit=2 : rakshak-fw 4 -A RAKSHAK-BLOCK -s 10.0.0.0/8 -j DROP
+exit=2 : rakshak-fw 4 -A RAKSHAK-BLOCK -s 127.0.0.1/32 -j DROP
+exit=2 : rakshak-fw 6 -A RAKSHAK-BLOCK -s 10.99.0.6/32 -j DROP
+exit=2 : rakshak-fw 4 -A RAKSHAK-BLOCK -s 10.99.0.6/32 -j ACCEPT
+exit=2 : rakshak-fw 4 -A RAKSHAK-BLOCK -s 10.99.0.6/32 -j DROP -i lo
+--- Rakshak IptablesEnforcer through the helper (real traffic)
+enforcer ready: True 
+before block   10.99.0.6 -> 200
+block           {'state': 'enforced', 'detail': 'applied and verified in iptables chain RAKSHAK-BLOCK'}
+while blocked  10.99.0.6 -> 000 (000 = no answer)   10.99.0.3 -> 200
+unblock         {'state': 'removed', 'detail': 'removed from iptables chain RAKSHAK-BLOCK and verified'}
+after unblock  10.99.0.6 -> 200
+block loopback  {'state': 'failed', 'detail': 'NOT applied: iptables error: rakshak-fw: refused: protected address'}
+--- chain after test
+-N RAKSHAK-BLOCK

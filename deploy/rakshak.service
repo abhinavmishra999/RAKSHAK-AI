@@ -1,0 +1,44 @@
+# /etc/systemd/system/rakshak.service  - TEMPLATE, not tested in the build sandbox (no systemd there).
+# Review every line for your distribution before use.
+#
+# One-time setup (as root):
+#   useradd --system --home /opt/rakshak --shell /usr/sbin/nologin rakshak
+#   cp -r RAKSHAK-AI /opt/rakshak && chown -R root:root /opt/rakshak     # code is read-only for the service
+#   install -d -o rakshak -g rakshak -m 0700 /var/lib/rakshak               # data: DB, keys, reports, scope.yml
+#   install -o rakshak -g rakshak -m 0600 /opt/rakshak/scope.example.yml /var/lib/rakshak/scope.yml
+#   install -o root -g root -m 0640 deploy/rakshak.env.example /etc/rakshak/rakshak.env   # then edit it
+#   sudo -u rakshak RAKSHAK_DATA=/var/lib/rakshak /opt/rakshak/.venv/bin/python -m rakshak.admin <you> --role admin
+#   systemctl daemon-reload && systemctl enable --now rakshak
+[Unit]
+Description=RAKSHAK-AI offline security console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rakshak
+Group=rakshak
+# Read access to web and SSH logs (Debian/Ubuntu: group adm). Adjust for your system.
+SupplementaryGroups=adm
+WorkingDirectory=/opt/rakshak
+EnvironmentFile=/etc/rakshak/rakshak.env
+ExecStart=/opt/rakshak/.venv/bin/python -m rakshak.api
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+# Hardening. NoNewPrivileges is NOT set because the firewall helper is reached through sudo.
+# If you run with RAKSHAK_ENFORCER=none, also add: NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectControlGroups=true
+LockPersonality=true
+ReadWritePaths=/var/lib/rakshak
+# Not enabled on purpose: ProtectKernelModules / ProtectKernelTunables would also apply to the
+# sudo'd iptables call and can stop it auto-loading netfilter modules. Enable them only after
+# confirming blocks still apply (the Protection page shows "Connected to the firewall").
+
+[Install]
+WantedBy=multi-user.target

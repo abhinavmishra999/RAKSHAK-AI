@@ -1,0 +1,54 @@
+# Rakshak web-attack rules. Each pattern is a case-insensitive regex applied to the
+# URL-decoded path, query string and request body. Add new rules here or import an
+# offline update pack from the dashboard; no internet is needed.
+- id: WEB-SQLI-001
+  category: sql_injection
+  severity: high
+  name: SQL injection (tautology / union / comment)
+  patterns:
+    - "('|\")\\s*(or|and)\\s*('?\\d+'?\\s*=\\s*'?\\d+|'[^']*'\\s*=\\s*'[^']*|true)"
+    - "union(\\s|/\\*.*?\\*/)+(all\\s+)?select"
+    - "(;|'|\\))\\s*(drop|delete|insert|update|alter)\\s+(table|from|into)"
+    - "(sleep|benchmark|pg_sleep|waitfor\\s+delay)\\s*\\("
+    - "'\\s*(--|#|/\\*)"
+    - "information_schema|sqlite_master|@@version"
+- id: WEB-XSS-001
+  category: xss
+  severity: medium
+  name: Cross-site scripting (script / event handler injection)
+  patterns:
+    - "<\\s*script[^>]*>"
+    - "javascript\\s*:"
+    - "on(error|load|mouseover|click|focus)\\s*="
+    - "<\\s*(img|svg|iframe|body)[^>]*(src|onload|onerror)"
+    - "document\\.(cookie|location)|alert\\s*\\("
+- id: WEB-TRAV-001
+  category: path_traversal
+  severity: high
+  name: Path traversal / local file read
+  patterns:
+    - "(\\.\\./|\\.\\.\\\\){2,}"
+    - "/etc/(passwd|shadow|hosts)"
+    - "c:\\\\windows\\\\(win\\.ini|system32)"
+- id: WEB-CMDI-001
+  category: command_injection
+  severity: critical
+  name: OS command injection
+  patterns:
+    - "(;|\\||&&|`|\\$\\()\\s*(cat|ls|id|whoami|uname|wget|curl|nc|bash|sh|ping)\\b"
+- id: WEB-PROBE-001
+  category: sensitive_probe
+  severity: medium
+  name: Probe for secret or admin files
+  match_on: path
+  patterns:
+    - "/\\.(env|git|svn|htpasswd|DS_Store)"
+    - "/(wp-admin|wp-login\\.php|phpmyadmin|admin\\.php|config\\.php|backup\\.(zip|sql|tar))"
+    - "/(server-status|actuator|\\.aws/credentials)"
+- id: WEB-UA-001
+  category: scanner_tool
+  severity: low
+  name: Known attack-tool user agent
+  match_on: user_agent
+  patterns:
+    - "sqlmap|nikto|nmap|masscan|nuclei|zgrab|gobuster|dirbuster|wfuzz|hydra|acunetix"

@@ -1,0 +1,16 @@
+id: website-check
+name: Website safety observations
+version: "1.0"
+description: Harmless bounded HTTP observations with independent re-checks.
+source: builtin
+kind: active
+approval: admin
+interpreter: python
+executable: wrapper.py
+sha256: "25fe5d587faeed994ee39ee689b7ef8ceaca6bbdd6071bd7e927936b0f282e9e"
+target_type: url
+args: ["{target}"]
+timeout_s: 30
+max_output_kb: 512
+parser: json_findings
+validator: http_recheck

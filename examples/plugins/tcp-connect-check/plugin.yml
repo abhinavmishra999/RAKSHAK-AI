@@ -1,0 +1,17 @@
+# Example external plugin. Every field is checked strictly; unknown fields are refused.
+id: tcp-connect-check            # must equal the folder name
+name: TCP connect check (example plugin)
+version: "1.0"
+description: Opens a plain TCP connection to a fixed list of ports. Open ports are re-checked independently.
+source: examples/plugins/tcp-connect-check (shipped with RAKSHAK-AI)   # for a GitHub tool: repo URL + commit
+kind: active                     # active = sends traffic to the target; always needs a per-run approval
+approval: admin                  # admin = only an admin may approve each run (or: self)
+interpreter: python              # empty = run 'executable' directly; python = run a script in this folder
+executable: wrapper.py
+sha256: "9798f3392c2307186c34dc50ba0b1f3b9f5bacaa1e26c09b49ca34a9148efdde"   # sha256sum wrapper.py
+target_type: host                # host = numeric IP inside scope.yml; url = numeric-IP URL
+args: ["{target}", "22,80,443,2222,8081,8082,8083"]   # fixed list, no shell; only {target} is substituted
+timeout_s: 30
+max_output_kb: 64
+parser: json_findings            # json_findings | nmap_xml | text
+validator: tcp_open              # tcp_open | none (http_recheck is reserved for the built-in website check)

@@ -1,0 +1,139 @@
+#!/usr/bin/python3 -I
+"""rakshak-acct: the ONLY account command the Rakshak service account may run as root.
+
+It accepts exactly:
+    rakshak-acct status <name>    -> JSON {name, exists, uid, locked, in_sudo}
+    rakshak-acct lock   <name>    -> usermod -L, then verify the shadow hash is disabled
+    rakshak-acct remove <name>    -> userdel -r, then verify the account is gone
+
+Rules baked in here (this helper is the privilege boundary, Rakshak is not trusted):
+  * only one name at a time, matching ^[a-z_][a-z0-9_-]{0,31}$ - no flags, no injection;
+  * system accounts (uid < 1000) can NEVER be locked or removed by this helper;
+  * uid-0 accounts other than root are refused too (a human must handle privilege changes);
+  * deny-list: /usr/local/etc/rakshak-acct-deny, one username per line (root and the
+    service user are refused even if the file is missing);
+  * every accepted or refused call logs to syslog via logger.
+
+Install (as root), next to rakshak-fw:
+    install -o root -g root -m 0755 deploy/rakshak-acct /usr/local/sbin/rakshak-acct
+    echo 'rakshak ALL=(root) NOPASSWD: /usr/local/sbin/rakshak-acct' > /etc/sudoers.d/rakshak-acct
+    visudo -c
+Then start Rakshak with RAKSHAK_ACCT_CMD="sudo -n /usr/local/sbin/rakshak-acct".
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+DENY_FILE = "/usr/local/etc/rakshak-acct-deny"
+BASE_DENY = {"root", "daemon", "bin", "sys", "sync", "games", "man", "mail", "news",
+             "proxy", "www-data", "backup", "list", "irc", "nobody", "_apt", "sshd"}
+
+
+def refuse(why):
+    subprocess.run(["logger", f"rakshak-acct: refused: {why}"], check=False, timeout=5)
+    print(f"rakshak-acct: refused: {why}", file=sys.stderr)
+    sys.exit(2)
+
+
+def log(what):
+    subprocess.run(["logger", f"rakshak-acct: {what}"], check=False, timeout=5)
+
+
+def denylist():
+    names = set(BASE_DENY)
+    try:
+        with open(DENY_FILE) as fh:
+            names |= {ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")}
+    except OSError:
+        pass
+    return names
+
+
+def passwd_entry(name):
+    out = subprocess.run(["getent", "passwd", name], capture_output=True, text=True, timeout=10)
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    f = out.stdout.strip().split(":")
+    return {"name": f[0], "uid": int(f[2]), "gid": int(f[3])}
+
+
+def shadow_disabled(name):
+    out = subprocess.run(["getent", "shadow", name], capture_output=True, text=True, timeout=10)
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    h = out.stdout.strip().split(":")[1]
+    return h.startswith("!") or h.startswith("*")
+
+
+def in_sudo(name):
+    out = subprocess.run(["getent", "group", "sudo"], capture_output=True, text=True, timeout=10)
+    if out.returncode != 0:
+        return False
+    return name in out.stdout.strip().split(":")[-1].split(",")
+
+
+def status_json(name):
+    pw = passwd_entry(name)
+    return json.dumps({"name": name, "exists": bool(pw), "uid": (pw or {}).get("uid"),
+                       "locked": shadow_disabled(name) if pw else None,
+                       "in_sudo": in_sudo(name)})
+
+
+def guarded(name):
+    if not NAME_RE.fullmatch(name):
+        refuse("account name is not a simple identifier")
+    if name in denylist():
+        refuse("account is on the deny-list")
+    pw = passwd_entry(name)
+    if pw is None:
+        refuse("account does not exist")
+    if pw["uid"] < 1000:
+        refuse("system account (uid < 1000) is out of reach for this helper")
+    if pw["uid"] == 0:
+        refuse("uid-0 account: a human must handle privilege changes directly")
+    return pw
+
+
+def main(argv):
+    if os.geteuid() != 0:
+        refuse("this helper must run as root (via the configured sudo rule)")
+    if len(argv) != 2 or argv[0] not in ("status", "lock", "remove"):
+        refuse("usage: rakshak-acct status|lock|remove <name>")
+    name = argv[1]
+    if argv[0] == "status":
+        if not NAME_RE.fullmatch(name):
+            refuse("account name is not a simple identifier")
+        print(status_json(name))
+        sys.exit(0)
+    guarded(name)
+    if argv[0] == "lock":
+        if shadow_disabled(name):
+            print(status_json(name))
+            log(f"already locked: {name}")
+            sys.exit(0)
+        r = subprocess.run(["usermod", "-L", name], capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            refuse(f"usermod failed: {r.stderr.strip()[:120]}")
+        if not shadow_disabled(name):
+            refuse("verification failed: shadow still shows an enabled password hash")
+        log(f"locked account: {name}")
+        print(status_json(name))
+        sys.exit(0)
+    # remove
+    home = passwd_entry(name) and subprocess.run(
+        ["getent", "passwd", name], capture_output=True, text=True,
+        timeout=10).stdout.strip().split(":")[5] or ""
+    r = subprocess.run(["userdel", "-r", name], capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        refuse(f"userdel failed: {r.stderr.strip()[:120]}")
+    if passwd_entry(name) is not None:
+        refuse("verification failed: account still present after removal")
+    log(f"removed account: {name} (home {home})")
+    print(status_json(name))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
